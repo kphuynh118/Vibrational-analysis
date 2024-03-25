@@ -39,7 +39,7 @@ def find_atomic_mass(symbol, atomic_mass_dict):
         return "Element not found"
 
 def find_j(nameroot, AtomList, directory):
-    file_pattern = r'.*_(\w+)_(\w+)\.grad$'
+    file_pattern = r'.*_(.+)_(.+)\.grad$'
     method, basis = find_method_and_basis(directory, file_pattern)
     for i in range(len(AtomList)):
         for ii in range(3):
@@ -132,7 +132,7 @@ def main():
     command = f"get_forces_in_xyzformat {args.output_dir} {args.xyzfile}"
     os.system(command)
 
-    file_pattern = r'.*_(\w+)_(\w+)\.grad$'
+    file_pattern = r'.*_(.+)_(.+)\.grad$'
     method, basis = find_method_and_basis(args.output_dir, file_pattern)
   
     
