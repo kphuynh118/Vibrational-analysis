@@ -5,6 +5,7 @@ from sympy import *
 from optparse import OptionParser
 import os, re 
 import argparse
+import subprocess
 
 def parse_xyz_file(filename):
     AtomList = []
@@ -19,6 +20,7 @@ def parse_xyz_file(filename):
     fr.close()
     Coords = np.array(CoordList)
     return AtomList, Coords
+    
 def write_xyz_file(directory, outfile, AtomList, Coords):
     filepath = os.path.join(directory, outfile)
     with open(filepath, 'w') as fw:
@@ -27,6 +29,7 @@ def write_xyz_file(directory, outfile, AtomList, Coords):
         for iAtom in range(len(AtomList)):
             x, y, z = Coords[iAtom]
             fw.write("%-3s %15.10f %15.10f %15.10f\n" % (AtomList[iAtom], x, y, z))
+            
 def shift_one_coord(input_path, xyzfile, nameroot):
     AtomList, Coords = parse_xyz_file(xyzfile)  # Ensure this function is defined
     shifted_files = []
@@ -43,6 +46,7 @@ def shift_one_coord(input_path, xyzfile, nameroot):
                 shifted_files.append(outfile)
 
     return shifted_files
+
 def main():
     UseMsg = '''
     python [script] [options] [xyzfile]
@@ -56,6 +60,9 @@ def main():
     parser.add_argument("-o", "--output_path", default="get_forces_qchem_input_files", help="the directory to store the shifted XYZ files (default: get_forces_qchem_input_files)")
     parser.add_argument("-i", "--input_path", default="shifted_files", type=str, help="the directory storing the generated inputs (default: shifted_files)")
     parser.add_argument("-a", "--all", action='store_true', default=False, help="run all the xyz files under the xyz_path")
+    parser.add_argument('--sol_param', dest="sol_param", action='store', type=str, default=None, help='The parameter for solvent. Dielectric constant for PCM and solvent name for SMx')
+    parser.add_argument('--sol',dest='sol',action='store',type=str,default=None,help='specify the solvent model to use')
+    
     args = parser.parse_args()
 
     if not os.path.isfile(args.xyzfile):
@@ -67,7 +74,12 @@ def main():
     os.makedirs(args.output_path, exist_ok=True) #make a dir for all the output from make_input_sp_geom
     shifted_files = shift_one_coord(args.input_path, args.xyzfile, nameroot)
 
-    command = f"make_input_sp_geom --force -m {args.method} -b {args.basis} --charge {args.charge} --mult {args.multiplicity} -i {args.output_path} -a {args.input_path}"
+    command = f"make_input_sp_geom --force -m {args.method} -b {args.basis} --charge {args.charge} --mult {args.multiplicity}  -i {args.output_path} -a {args.input_path}"
+    if args.sol is not None:
+        command += f" --sol {args.sol}"
+    if args.sol_param is not None:
+        command += f" --sol_param {args.sol_param}"
+    
     os.system(command)
 
 if __name__ == "__main__":
