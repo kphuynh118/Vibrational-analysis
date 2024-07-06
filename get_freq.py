@@ -32,6 +32,15 @@ AtomicMass_dict =   {
     'Cm': 247.070, 'Bk': 247.0702, 'Cf': 251.080, 'Es': 254.0881, 'Fm': 257.095,
     'Md': 258.099, 'No': 259.101, 'Lr': 266.1198 
 }
+
+h = 6.62607015*1e-34 #Planck's constant (Js)
+c = 299792458        #Speed of light (m/s)
+NA = 6.02214076e23  #Avogadro's number (mol^-1)
+k = 1.380649*1e-23 #Boltzmann constant (J/K)
+conversion_factor = 1000 * 4.184  #Conversion from Joules to kcal/mol
+T = 298.15 #standard temperature
+R = 0.0019872 #R constant in kcal/(mol K)
+
 def find_atomic_mass(symbol, atomic_mass_dict):
     if symbol in atomic_mass_dict:
         return atomic_mass_dict[symbol]
@@ -118,36 +127,203 @@ def find_method_and_basis(directory, file_pattern):
         if match:
             return match.groups()  # Returns the method and basis
     return None, None
+def moment_of_inertia(AtomList, Coords, AtomicMass_dict):
+    I = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    for atom, coord in zip(AtomList, Coords):
+        mass = AtomicMass_dict[atom]
+        x, y, z = coord
+        I[0][0] += mass * (y**2 + z**2)
+        I[1][1] += mass * (x**2 + z**2)
+        I[2][2] += mass * (x**2 + y**2)
+        I[0][1] -= mass * x * y
+        I[1][0] -= mass * x * y
+        I[0][2] -= mass * x * z
+        I[2][0] -= mass * x * z
+        I[1][2] -= mass * y * z
+        I[2][1] -= mass * y * z
+
+    return I
+
+def COM(AtomList, Coords, AtomicMass_dict):
+    masses = [find_atomic_mass(atom, AtomicMass_dict) for atom in AtomList]
+  
+    total_mass = 0
+    for i in range(0,len(masses)):
+        total_mass += masses[i] 
+        
+    mass_times_coords = [tuple(masses[i] * Coords[i][j] for j in range(3)) for i in range(len(AtomList))]
+
+    summed_coords = [sum(coord[j] for coord in mass_times_coords) for j in range(3)]
+    
+    center_of_mass = tuple(coord / total_mass for coord in summed_coords)
+    return center_of_mass
+
+def translational_V(AtomList, AtomicMass_dict):
+    masses = [find_atomic_mass(atom, AtomicMass_dict) for atom in AtomList]
+    ami = np.sqrt(masses)
+   
+    trans_V = np.zeros((3,3*len(AtomList)))
+    
+    for i in range(3):
+        trans_V[i, i::3] = ami
+
+    return trans_V
+
+def rotational_V(AtomList,AtomicMass_dict,Coords,inertia):
+    masses = [find_atomic_mass(atom, AtomicMass_dict) for atom in AtomList]
+    ami = np.sqrt(masses)
+    center_of_mass = COM(AtomList, Coords, AtomicMass_dict)
+    eigenvalues, eigenvectors = np.linalg.eigh(inertia)
+    rot_V = np.zeros((3,3*len(AtomList)))
+    for i in range(3):
+        for j,atom in enumerate(AtomList):
+            # Cross product of eigenvector and (r - center_of_mass) weighted by sqrt of atomic mass
+            w = np.cross(eigenvectors[:, i], (Coords[j] - np.array(center_of_mass)))
+            rot_V[i, 3*j:3*j+3] = w * ami[j]
+
+    return rot_V
+
+def normalize(V):
+    for i in range(V.shape[0]):
+        norm = np.linalg.norm(V[i])
+        if norm > 0:
+            V[i] /= norm
+    return V
+
+def gram_schmidt(V):
+    U = np.zeros_like(V)
+    for i in range(V.shape[0]):
+        U[i] = V[i]
+        for j in range(i):
+            proj = np.dot(U[j], V[i]) / np.dot(U[j], U[j])
+            U[i] -= proj * U[j]
+
+        norm = np.linalg.norm(U[i])
+        if norm > 0:
+            U[i] /= norm
+    return U
+
+def projected_Hessian(translational_vectors, rotational_vectors, weighted_Hessian_matrix):
+    V = np.concatenate((translational_vectors,rotational_vectors),axis=0)
+    V = normalize(V)
+    V = gram_schmidt(V)
+    V = V.reshape(6,-1).T #9x6
+    
+    WVT = np.dot(V,V.T)
+    Idenity = np.eye(weighted_Hessian_matrix.shape[0])
+  
+    D = Idenity - WVT #projection matrix
+     
+    projected_H = np.dot(D.T,np.dot(weighted_Hessian_matrix,D))
+    return projected_H  
+
+def save_matrix_to_file(matrix, filename):
+    np.savetxt(filename, matrix, fmt='%.6f')
+    print(f"Matrix saved to '{filename}'")
+
+def enthalpy(frequencies):
+    
+    gas_constant = R*T
+    E_trans = E_rot = (3/2) * gas_constant
+    E_vib = 0
+    zpve = 0 
+    for freq in frequencies:
+        zpve_joules = 0.5 * h * c * freq * 1e2  # Convert from cm^-1 to m^-1
+        vib_tempt = (h * c * freq * 1e2 * math.exp(-h*c*freq*1e2/(k*T)))/(1-math.exp((-h*c*freq*1e2)/(k*T)))
+        zpve += zpve_joules * NA / conversion_factor
+        E_vib_kcal = (zpve_joules + vib_tempt) * NA / conversion_factor
+        E_vib += E_vib_kcal
+    print("Zero point vibrational energy: %.5f" % zpve, "kcal/mol")
+    print("Translational Enthalpy: %.5f" % E_trans,  "kcal/mol")
+    print("Rotational Enthalpy:    %.5f" % E_rot,    "kcal/mol")
+    print("Vibrational Enthalpy:   %.5f" % E_vib,    "kcal/mol")
+
+def entropy(AtomList,AtomicMass_dict,frequencies,inertia):
+    M = 0
+    S_vib_tempt = 0
+    symmetry_number = 1
+    R_cal = 1.987216
+    for atom in AtomList:
+        M += find_atomic_mass(atom, AtomicMass_dict)
+    S_trans = 0.993608*(5*np.log(T) + 3*np.log(M)) - 2.31482
+    
+    for freq in frequencies:
+        theta = (h * c * freq * 1e2) / (k * T)
+        vib = (theta * math.exp(-theta) / (1 - math.exp(-theta))) - np.log(1 - math.exp(-theta))
+        S_vib_tempt += vib
+    """"Still working on vibrational entropy""""    
+    S_vib = 8.314462618 * S_vib_tempt * (1/4184) 
+    prodI = 1
+    eigen = np.linalg.eigvals(inertia)
+    for i in eigen:
+        prodI *= i
+        
+    """"Still working rotational entropy""""
+    S_rot = 0.993608*3*np.log(k*T/(h*c)) - 2*np.log(symmetry_number) + np.log(math.pi/prodI) + 3 
+    #S_rot = 0.993608 * np.log((math.pi/((symmetry_number**2)*prodI)*((k*T/(h*c)**3)))) + (3/2)*R_cal
+
+    print("Translational Entropy:  %.5f" % S_trans,  "cal/mol.K")
+    print("Rotational Entropy:     %.5f" % S_rot,  "cal/mol.K")
+    print("Vibrational Entropy:    %.5f" % S_vib,    "cal/mol.K")
 
 def main():
     UseMsg = '''
-    python [script] [output dir] [xyzfile]
+    python [script] [option] [output dir] [xyzfile]
     '''
     parser = argparse.ArgumentParser(description="Find the frequency using finite difference.",usage=UseMsg)
     parser.add_argument("output_dir", help="The directory to store the shifted xyz files after running force job on Qchem")
     parser.add_argument("xyzfile", help="name of the original xyz file")
-
+    parser.add_argument('--sol',dest='sol',action='store_true',default=False,help="Turn this on when implicit solvent is used; currently supporting PCM and SMD")
+    
     args = parser.parse_args()
+    if args.sol:
+        command = f"get_forces_in_xyzformat --sol {args.output_dir} {args.xyzfile}" 
+    else:
+        command = f"get_forces_in_xyzformat {args.output_dir} {args.xyzfile}"
 
-    command = f"get_forces_in_xyzformat {args.output_dir} {args.xyzfile}"
+
     os.system(command)
 
     file_pattern = r'.*_(.+)_(.+)\.grad$'
     method, basis = find_method_and_basis(args.output_dir, file_pattern)
-  
+    print(method)
+    print(basis)
     
     AtomList, Coords = xyzgeom.parse_xyz_file(args.xyzfile)
     nameroot = os.path.splitext(args.xyzfile)[0]
+    output_directory = f"{nameroot}_freq_compare"
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
     find_j(nameroot, AtomList, args.output_dir)
     Hessian_matrix = Hessian(AtomList, args.output_dir)
-    weighted_Hessian = mass_weighted_Hessian(Hessian_matrix, AtomList, AtomicMass_dict)
-    eigenvalues, eigenvectors = np.linalg.eigh(weighted_Hessian)
-    #Convert eigevalues in amu to au 
-    eigenvalues_au_list = [eigen * (5.4857990945*1e-4) for eigen in eigenvalues]
+    mass_weighted_Hessian_matrix = mass_weighted_Hessian(Hessian_matrix, AtomList, AtomicMass_dict)
+    inertia = moment_of_inertia(AtomList, Coords, AtomicMass_dict)
+    print(inertia)
+    trans_V = translational_V(AtomList, AtomicMass_dict)
+    rot_V = rotational_V(AtomList, AtomicMass_dict, Coords, inertia)
+    projected_mass_weighted_Hessian_matrix = projected_Hessian(trans_V,rot_V,mass_weighted_Hessian_matrix)
+
+    eigenvalues, eigenvectors = np.linalg.eigh(projected_mass_weighted_Hessian_matrix)
+    eigenvalues_au_list = [eigen * (5.4857990945*1e-4) for eigen in eigenvalues] #Convert eigevalues in amu to au 
     eigenvalues_au_list.sort()
-    lambda_list = eigenvalues_au_list[6:]
-    freq_list = [(np.sqrt(lamda)/(2*math.pi*(2.41884*1e-17)))/(2.998*1e10) for lamda in lambda_list]
-    print(freq_list)
+    #lambda_list = eigenvalues_au_list[6:]
+    lambda_list = [eigen for eigen in eigenvalues_au_list if np.abs(eigen) >= 1e-12] 
     
+    #freq_list = [(np.sqrt(lamda)/(2*math.pi*(2.41884*1e-17)))/(2.998*1e10) for lamda in lambda_list]
+    freq_list = [-(np.sqrt(np.abs(lamda)) / (2 * math.pi * (2.41884 * 1e-17))) / (2.998 * 1e10) if lamda < 0 else
+    (np.sqrt(lamda) / (2 * math.pi * (2.41884 * 1e-17))) / (2.998 * 1e10) for lamda in lambda_list]
+    print("Frequencies: ",freq_list)
+    
+    enthalpy(freq_list)
+    entropy(AtomList,AtomicMass_dict,freq_list,inertia)
+
+    data = [nameroot] + freq_list
+    df = pd.DataFrame([data])
+    output_csv_file_name = f"{output_directory}/{nameroot}_frequency.csv"
+    df.to_csv(output_csv_file_name, index=False, header=False)
+    print(f"Frequencies saved to '{output_csv_file_name}'") 
+
+
 if __name__ == "__main__":
     main()
