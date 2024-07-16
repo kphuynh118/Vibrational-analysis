@@ -222,49 +222,62 @@ def save_matrix_to_file(matrix, filename):
     print(f"Matrix saved to '{filename}'")
 
 def enthalpy(frequencies):
-    
     gas_constant = R*T
     E_trans = E_rot = (3/2) * gas_constant
-    E_vib = 0
-    zpve = 0 
-    for freq in frequencies:
-        zpve_joules = 0.5 * h * c * freq * 1e2  # Convert from cm^-1 to m^-1
-        vib_tempt = (h * c * freq * 1e2 * math.exp(-h*c*freq*1e2/(k*T)))/(1-math.exp((-h*c*freq*1e2)/(k*T)))
-        zpve += zpve_joules * NA / conversion_factor
-        E_vib_kcal = (zpve_joules + vib_tempt) * NA / conversion_factor
-        E_vib += E_vib_kcal
-    print("Zero point vibrational energy: %.5f" % zpve, "kcal/mol")
-    print("Translational Enthalpy: %.5f" % E_trans,  "kcal/mol")
-    print("Rotational Enthalpy:    %.5f" % E_rot,    "kcal/mol")
-    print("Vibrational Enthalpy:   %.5f" % E_vib,    "kcal/mol")
+    
+    frequencies = np.array(frequencies)
+    zpve_joules = 0.5 * h * c * frequencies * 1e2  # Convert from cm^-1 to m^-1
+    vib_tempt = (h * c * frequencies * 1e2 * np.exp(-h*c*frequencies*1e2/(k*T)))/(1-np.exp((-h*c*frequencies*1e2)/(k*T)))
+    zpve = np.sum(zpve_joules * NA / conversion_factor)
+    E_vib = np.sum(zpve_joules + vib_tempt) * NA / conversion_factor
+    
+    print("Zero point vibrational energy: %12.5f" % zpve, "kcal/mol")
+    print("Translational Enthalpy: %12.5f" % E_trans,  "kcal/mol")
+    print("Rotational Enthalpy:    %12.5f" % E_rot,    "kcal/mol")
+    print("Vibrational Enthalpy:   %12.5f" % E_vib,    "kcal/mol")
 
-def entropy(AtomList,AtomicMass_dict,frequencies,inertia):
+def get_moment_inertia(Coords,AtomList,AtomicMass_dict):
+    natoms = Coords.shape[1]
+    atomic_mass = np.array([find_atomic_mass(atom, AtomicMass_dict) for atom in AtomList])
+    total_mass = np.sum(atomic_mass)  
+    
+    com =  np.dot(Coords, atomic_mass) / total_mass
+
+    shifted_coords = Coords - com[:,np.newaxis] #shift coordinates to the COM, np.newaxis make 2D column vector 
+   
+    inertia_tensor = np.zeros((3,3))
+    for i in range(natoms):
+        r_squared = np.sum(shifted_coords[:,i]**2)
+        inertia_tensor += (r_squared*np.eye(3)-np.outer(shifted_coords[:,i],shifted_coords[:,i]))*atomic_mass[i] #np.outer calculates the outer product of 2 vectors
+    moment_evals, principal_axes = np.linalg.eigh(inertia_tensor)
+
+    return principal_axes, moment_evals
+    
+def entropy(AtomList,AtomicMass_dict,frequencies,moment_evals):
     M = 0
     S_vib_tempt = 0
     symmetry_number = 1
     R_cal = 1.987216
-    for atom in AtomList:
-        M += find_atomic_mass(atom, AtomicMass_dict)
-    S_trans = 0.993608*(5*np.log(T) + 3*np.log(M)) - 2.31482
-    
-    for freq in frequencies:
-        theta = (h * c * freq * 1e2) / (k * T)
-        vib = (theta * math.exp(-theta) / (1 - math.exp(-theta))) - np.log(1 - math.exp(-theta))
-        S_vib_tempt += vib
-    """"Still working on vibrational entropy""""    
-    S_vib = 8.314462618 * S_vib_tempt * (1/4184) 
-    prodI = 1
-    eigen = np.linalg.eigvals(inertia)
-    for i in eigen:
-        prodI *= i
-        
-    """"Still working rotational entropy""""
-    S_rot = 0.993608*3*np.log(k*T/(h*c)) - 2*np.log(symmetry_number) + np.log(math.pi/prodI) + 3 
-    #S_rot = 0.993608 * np.log((math.pi/((symmetry_number**2)*prodI)*((k*T/(h*c)**3)))) + (3/2)*R_cal
+    total_mass = np.sum(np.array([find_atomic_mass(atom, AtomicMass_dict) for atom in AtomList])) 
+    S_trans = 0.993608*(5*np.log(T) + 3*np.log(total_mass)) - 2.31482
 
-    print("Translational Entropy:  %.5f" % S_trans,  "cal/mol.K")
-    print("Rotational Entropy:     %.5f" % S_rot,  "cal/mol.K")
-    print("Vibrational Entropy:    %.5f" % S_vib,    "cal/mol.K")
+    frequencies = np.array(frequencies)    
+    expui = np.exp(frequencies*c*1e2*h/(k*T))
+    vib = (frequencies*c*1e2*h / (k*T) /  (expui-1.0) - np.log(expui-1.0) + frequencies*c*1e2*h/(k*T))
+    S_vib = np.sum(vib)*8.314462618*0.239005736
+        
+    amu_A2_to_kg_m2 = 1.66053906660e-46
+    amu_to_kg = 1.660539066*1e-27
+    bohr_to_angstrom = 5.291772108e-1
+    V_const = 8.0*math.pi*math.pi*(k*T/h)*(amu_to_kg/h)*bohr_to_angstrom*(1e-10)*bohr_to_angstrom*(1e-10)
+    
+    prodI = np.prod(moment_evals*V_const)
+    V_av = np.sqrt(math.pi*prodI + 1e-20)
+    S_rot = R_cal * (1.5 + np.log(V_av/symmetry_number)) 
+
+    print("Translational Entropy:  %12.5f" % S_trans,  "cal/mol.K")
+    print("Rotational Entropy:     %12.5f" % S_rot,  "cal/mol.K")
+    print("Vibrational Entropy:    %12.5f" % S_vib,    "cal/mol.K")
 
 def main():
     UseMsg = '''
@@ -313,10 +326,11 @@ def main():
     #freq_list = [(np.sqrt(lamda)/(2*math.pi*(2.41884*1e-17)))/(2.998*1e10) for lamda in lambda_list]
     freq_list = [-(np.sqrt(np.abs(lamda)) / (2 * math.pi * (2.41884 * 1e-17))) / (2.998 * 1e10) if lamda < 0 else
     (np.sqrt(lamda) / (2 * math.pi * (2.41884 * 1e-17))) / (2.998 * 1e10) for lamda in lambda_list]
-    print("Frequencies: ",freq_list)
     
+    borh_Coords = (Coords*angstrom_to_bohr).T
+    axes, moment_evals = get_moment_inertia(borh_Coords,AtomList,AtomicMass_dict)
     enthalpy(freq_list)
-    entropy(AtomList,AtomicMass_dict,freq_list,inertia)
+    entropy(AtomList,AtomicMass_dict,freq_list,moment_evals)
 
     data = [nameroot] + freq_list
     df = pd.DataFrame([data])
