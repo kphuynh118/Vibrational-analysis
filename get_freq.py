@@ -231,10 +231,11 @@ def enthalpy(frequencies):
     zpve = np.sum(zpve_joules * NA / conversion_factor)
     E_vib = np.sum(zpve_joules + vib_tempt) * NA / conversion_factor
     
-    print("Zero point vibrational energy: %12.5f" % zpve, "kcal/mol")
-    print("Translational Enthalpy: %12.5f" % E_trans,  "kcal/mol")
-    print("Rotational Enthalpy:    %12.5f" % E_rot,    "kcal/mol")
-    print("Vibrational Enthalpy:   %12.5f" % E_vib,    "kcal/mol")
+    #print("Zero point vibrational energy: %12.5f" % zpve, "kcal/mol")
+    #print("Translational Enthalpy: %12.5f" % E_trans,  "kcal/mol")
+    #print("Rotational Enthalpy:    %12.5f" % E_rot,    "kcal/mol")
+    #print("Vibrational Enthalpy:   %12.5f" % E_vib,    "kcal/mol")
+    return zpve, E_trans, E_rot, E_vib
 
 def get_moment_inertia(Coords,AtomList,AtomicMass_dict):
     natoms = Coords.shape[1]
@@ -275,9 +276,10 @@ def entropy(AtomList,AtomicMass_dict,frequencies,moment_evals):
     V_av = np.sqrt(math.pi*prodI + 1e-20)
     S_rot = R_cal * (1.5 + np.log(V_av/symmetry_number)) 
 
-    print("Translational Entropy:  %12.5f" % S_trans,  "cal/mol.K")
-    print("Rotational Entropy:     %12.5f" % S_rot,  "cal/mol.K")
-    print("Vibrational Entropy:    %12.5f" % S_vib,    "cal/mol.K")
+    #print("Translational Entropy:  %12.5f" % S_trans,  "cal/mol.K")
+    #print("Rotational Entropy:     %12.5f" % S_rot,  "cal/mol.K")
+    #print("Vibrational Entropy:    %12.5f" % S_vib,    "cal/mol.K")
+    return S_trans, S_rot, S_vib
 
 def main():
     UseMsg = '''
@@ -327,17 +329,24 @@ def main():
     freq_list = [-(np.sqrt(np.abs(lamda)) / (2 * math.pi * (2.41884 * 1e-17))) / (2.998 * 1e10) if lamda < 0 else
     (np.sqrt(lamda) / (2 * math.pi * (2.41884 * 1e-17))) / (2.998 * 1e10) for lamda in lambda_list]
     
-    borh_Coords = (Coords*angstrom_to_bohr).T
-    axes, moment_evals = get_moment_inertia(borh_Coords,AtomList,AtomicMass_dict)
-    enthalpy(freq_list)
-    entropy(AtomList,AtomicMass_dict,freq_list,moment_evals)
-
     data = [nameroot] + freq_list
     df = pd.DataFrame([data])
     output_csv_file_name = f"{output_directory}/{nameroot}_frequency.csv"
     df.to_csv(output_csv_file_name, index=False, header=False)
     print(f"Frequencies saved to '{output_csv_file_name}'") 
 
+    
+    borh_Coords = (Coords*angstrom_to_bohr).T
+    axes, moment_evals = get_moment_inertia(borh_Coords,AtomList,AtomicMass_dict)
+    enthalpy_list = enthalpy(freq_list)
+    entropy_list = entropy(AtomList,AtomicMass_dict,freq_list,moment_evals)
+    enthalpy_entropy_list = np.array(enthalpy_list + entropy_list).tolist()
+    enthalpy_entropy_data = [nameroot] + enthalpy_entropy_list
+    headers = ['rootname','zpve','trans_enthalpy','rot_enthalpy','vib_enthalpy','trans_entropy','rot_entropy','vib_entropy']
+    dff = pd.DataFrame([enthalpy_entropy_data],columns=headers)
+    enthalpy_entropy_csv_file_name = f"{output_directory}/{nameroot}_enthalpy_entropy.csv"
+    dff.to_csv(enthalpy_entropy_csv_file_name, index=False, header=True)
+    print(f"Enthalpy and entropy saved to '{enthalpy_entropy_csv_file_name}'") 
 
 if __name__ == "__main__":
     main()
