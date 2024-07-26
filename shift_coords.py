@@ -6,7 +6,8 @@ from optparse import OptionParser
 import os, re 
 import argparse
 import subprocess
-
+#how to compile: python shift_coords.py -m M06-2X -b 631+gd --sol pcm --sol_param 78.38 TfAcOH_unstable.xyz (for solvent model)
+#python shift_coords.py -m B3LYP -b 631gd water.xyz 
 def parse_xyz_file(filename):
     AtomList = []
     CoordList = []
@@ -30,8 +31,8 @@ def write_xyz_file(directory, outfile, AtomList, Coords):
             x, y, z = Coords[iAtom]
             fw.write("%-3s %15.10f %15.10f %15.10f\n" % (AtomList[iAtom], x, y, z))
             
-def shift_one_coord(input_path, xyzfile, nameroot):
-    AtomList, Coords = parse_xyz_file(xyzfile)  # Ensure this function is defined
+def shift_one_coord(input_path, xyzfile, nameroot): #shift the coordinate forward and backward 
+    AtomList, Coords = parse_xyz_file(xyzfile)  
     shifted_files = []
 
     for i in range(len(AtomList)):
