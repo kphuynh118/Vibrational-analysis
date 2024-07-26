@@ -9,6 +9,8 @@ import shutil
 #after the user run force job on qchem, all output files should be in get_forces_qchem_input_files
 #user need to move all output files into one directory 
 
+#to compile: python get_frequency.py --sol TfAcOH_unstable_forces_output/ TfAcOH_unstable.xyz (for solvent model)
+#python get_frequency.py water_forces_output/ water.xyz
 AtomicMass_dict =   {
     'H': 1.00783, 'He': 4.00260, 'Li': 7.01600, 'Be': 9.01218, 'B': 11.00931,
     'C': 12.00000, 'N': 14.00307, 'O': 15.99491, 'F': 18.99840, 'Ne': 19.99244,
@@ -106,10 +108,8 @@ def Hessian(AtomList, directory):
     return sym_Hessian_matrix
 
 def mass_weighted_Hessian(H, AtomList, AtomicMass_dict):
-    
     masses = [find_atomic_mass(atom, AtomicMass_dict) for atom in AtomList]
-    
-    # Expand the mass list for each coordinate
+    #expand the mass list for each coordinate
     new_mass_list = np.repeat(masses, 3)
 
     weighted_H = np.zeros((len(new_mass_list), len(new_mass_list)))
@@ -120,13 +120,14 @@ def mass_weighted_Hessian(H, AtomList, AtomicMass_dict):
         
     return weighted_H 
 
-def find_method_and_basis(directory, file_pattern):
+def find_method_and_basis(directory, file_pattern): #determine the method and basis from the name of the directory
     pattern = re.compile(file_pattern)
     for filename in glob.glob(os.path.join(directory, '*.grad')):
         match = pattern.search(os.path.basename(filename))
         if match:
             return match.groups()  # Returns the method and basis
     return None, None
+    
 def moment_of_inertia(AtomList, Coords, AtomicMass_dict):
     I = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
     for atom, coord in zip(AtomList, Coords):
