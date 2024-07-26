@@ -6,6 +6,21 @@ import numpy as np
 #dir where two csv files you want to compare are located
 #to get the freq out of qchem output file, use get_geom_freq --do_freq -t [dir] where [dir] contains the output files. Ideally [dir] should contains two files that have freq from qchem and freq from my code
 
+#to compile: compare_results.py [dir contains csv files]
+def ParseInput(ArgsIn):
+
+    UseMsg = '''
+    python [script] [target dir contains csv files] 
+    '''
+    parser = OptionParser(usage=UseMsg)
+    #parser.add_option('-t',"--target", required=True, help="directory containing the CSV files you want to compare")
+    options, args = parser.parse_args(ArgsIn)
+
+    if len(args) < 2:
+        parser.print_help()
+        sys.exit(0)
+    return options, args
+    
 def root_mean_square_error(data1, data2):
     """Calculate the Root Mean Square Error between two data sets."""
     return np.sqrt((data1 - data2) ** 2)
